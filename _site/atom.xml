@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.4.5">Jekyll</generator><link href="http://localhost:4000/atom.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2017-08-07T20:35:08+00:00</updated><id>http://localhost:4000/</id><title type="html">iUpdate</title><author><name>Vincent Nguyen</name></author><entry><title type="html">Nhận dạng đối tượng bằng mô hình YOLO</title><link href="http://localhost:4000/object%20detection/machine%20learning/2017/06/10/YOLO-Theory/" rel="alternate" type="text/html" title="Nhận dạng đối tượng bằng mô hình YOLO" /><published>2017-06-10T16:24:13+00:00</published><updated>2017-06-10T16:24:13+00:00</updated><id>http://localhost:4000/object%20detection/machine%20learning/2017/06/10/YOLO-Theory</id><content type="html" xml:base="http://localhost:4000/object%20detection/machine%20learning/2017/06/10/YOLO-Theory/">&lt;p&gt;Object detection là một bài toán quan trọng trong Computer Vision. Trong post này tôi sẽ giới thiệu YOLOv2, một trong những phương pháp tốt nhất và nhanh nhất (real-time) hiện nay. Tôi viết 2 bài về YOLO, bài thứ nhất (bài này) sẽ giúp các bạn hiểu về nguyên lý hoạt động của YOLO, bài thứ 2 sẽ giới thiệu cách huấn luyện mô hình YOLO cho dữ liệu riêng của chúng ta.&lt;/p&gt;
+
+&lt;p&gt;Bài báo gốc về YOLO có thể  tìm ở đây &lt;a href=&quot;https://arxiv.org/pdf/1506.02640.pdf&quot;&gt;version 1&lt;/a&gt;, &lt;a href=&quot;https://arxiv.org/pdf/1612.08242.pdf&quot;&gt;version 2&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Code source, hướng dẫn chạy test và huấn luyện với dữ liệu ảnh Pascal Voc ở đây &lt;a href=&quot;http://pjreddie.com/darknet/yolo/&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;YOLOv2 trailer. https://www.youtube.com/watch?v=VOC3huqHrss&lt;/p&gt;
+
+&lt;p&gt;Bài viết có sử dụng hình ảnh của tác gỉa YOLO và của các bạn Nga (link trong bài).&lt;/p&gt;
+
+&lt;h2 id=&quot;1-dependencies&quot;&gt;1. Dependencies&lt;/h2&gt;
+
+&lt;p&gt;Để đọc bài này, cần kiến thức cơ bản về  neural network&lt;/p&gt;
+
+&lt;h2 id=&quot;2-nhận-dạng&quot;&gt;2. Nhận dạng&lt;/h2&gt;
+
+&lt;p&gt;YOLO là một deep net kết hợp giữa convolutional layers và connected layers :&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/images/yolo/yolo_architecture.jpg&quot; alt=&quot;architecture&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;YOLO phân chia hình ảnh thành một mạng lưới 7x7 ô (grid_size=7x7):&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/images/yolo/yolo_01.png&quot; alt=&quot;grid&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;YOLO sẽ dự đoán xem trong mỗi ô xem liệu có object mà điểm trung tâm rơi vào ô đó. Và dự đoán điểm trung tâm, kích thước của object đó và xác xuất object đó là object nào trong các objects cần xác định.&lt;/p&gt;
+
+&lt;p&gt;Mỗi ô này có trách nhiệm dự đoán 2 hộp (boxes_number=2) bao quanh. Mỗi 1 hộp mô tả hình chữ nhật bao quanh một object.&lt;/p&gt;
+
+&lt;p&gt;Giả sử ta đang huấn luyên YOLO nhận dạng 20_objects khác nhau. Sau khi qua các layers, image input sẽ được biến đổi thành 1 tensor kích thước 7x7x30.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/images/yolo/yolo_output.jpg&quot; alt=&quot;yolo_output&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Ta có thể hiểu là mỗi ô sẽ có 30 tham số , tham số thứ nhất là xác xuất ô có chứa 1 object, tham số  2,3,4,5 lấn lượt là x_center, y_center, width, height của box 1. Tương tự tham số 6,7,8,9,10 là của box 2. Tham số thứ 11 là xác xuất object trong ô là object1 (trong 20_objects cần nhận dạng). Tương tự tham số 12 là xác xuất object trong ô là object2 … cho đên tham số 30 là xác xuất object trong ô là object20.&lt;/p&gt;
+
+&lt;p&gt;Ta có thể hiểu đơn giản như sau:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;Image input được resize thành 1 image 448x448x3 (image_dimension = 448x448 với số channels = 3, YOLO sử dụng hệ màu HSV)&lt;/li&gt;
+  &lt;li&gt;Qua các layers, biến đổi image 448x448x3 thành 1 grid có kích thước 7x7 với số tham số cho mỗi ô trong grid là 30 (30 = 5xboxes_number + number_of_objects)&lt;/li&gt;
+  &lt;li&gt;Neural net có nhiệm vụ huấn luyện các &lt;strong&gt;trọng số của các layers&lt;/strong&gt; để có được mô hình tốt cuối cùng.&lt;/li&gt;
+  &lt;li&gt;Để nhận dạng một image mới, các bước 1,2 sẽ được thực hiện. Sau đó dựa vào các &lt;strong&gt;tham số trong grid 7x7x30&lt;/strong&gt; ta sẽ xác định được các box chứa object với xác xuất cao. (các box đè lên nhau sẽ được loại bằng phương pháp NMS, chỉ giữ lại box có xác xuất cao nhất)&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Có thể xem video sau của các bạn gấu Nga  để hiểu rõ hơn (chỉ có phần nhận dạng, ko có phần huấn luyện) https://youtu.be/L0tzmv–CGY&amp;amp;usg=ALkJrhgvWHttKiRTLXiQDrI_a3f0tpJ0oA&lt;/p&gt;
+
+&lt;h2 id=&quot;3-huấn-luyện&quot;&gt;3. Huấn luyện&lt;/h2&gt;
+
+&lt;p&gt;Để hiểu cách neural net huấn luyện các trọng số  thì điều quan trọng nhất là phải hiểu hàm mất mát (loss function)&lt;/p&gt;
+
+&lt;h3 id=&quot;31-các-khái-niệm&quot;&gt;3.1. Các khái niệm&lt;/h3&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;script type=&quot;math/tex&quot;&gt;1^{obj}_{i\ j} = 1&lt;/script&gt; nếu box thứ j của ô thứ i có chứa object. Vì huấn luyện cần các image với ground-truth (vị trí của các objects) nên YOLO biết điểm trung tâm của từng object rơi vào ô nào trong grid 7x7.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;&lt;script type=&quot;math/tex&quot;&gt;1^{noobj}_{i\ j} = 1&lt;/script&gt; nếu box thứ j của ô thứ i không chứa object.&lt;/li&gt;
+  &lt;li&gt;&lt;script type=&quot;math/tex&quot;&gt;1^{obj}_{i} = 1&lt;/script&gt; nếu ô thứ i có chứa object&lt;/li&gt;
+  &lt;li&gt;&lt;script type=&quot;math/tex&quot;&gt;S^2=7\times7&lt;/script&gt;, &lt;script type=&quot;math/tex&quot;&gt;B&lt;/script&gt; = boxes_number = số box mỗi ô sẽ dự đoán, được cố định = 2&lt;/li&gt;
+  &lt;li&gt;&lt;script type=&quot;math/tex&quot;&gt;\lambda_{coord} = 5.0&lt;/script&gt;, &lt;script type=&quot;math/tex&quot;&gt;\lambda_{noobj} = 0.5&lt;/script&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;script type=&quot;math/tex&quot;&gt;classes&lt;/script&gt; : các lớp đối tượng cần được nhận dạng, ví dụ chó, mèo, oto…&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/images/yolo/yolo_lossFunction.JPG&quot; alt=&quot;loss function&quot; /&gt;&lt;/p&gt;
+
+&lt;h3 id=&quot;32-hàm-mất-mát&quot;&gt;3.2. Hàm mất mát&lt;/h3&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;(1) Tính toán loss (tổn thất) của điểm trung tâm (x, y) cho hộp &lt;script type=&quot;math/tex&quot;&gt;j&lt;/script&gt; của ô &lt;script type=&quot;math/tex&quot;&gt;i&lt;/script&gt; nơi object tồn tại. Chú ý là  &lt;script type=&quot;math/tex&quot;&gt;\hat{x}_i&lt;/script&gt; là tham số của tensor output của neural net còn &lt;script type=&quot;math/tex&quot;&gt;x_i&lt;/script&gt; là của ground-truth. Tương tự cho tất cả các biến khác.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;(2) Tính toán tổn thất width và height của hộp &lt;script type=&quot;math/tex&quot;&gt;j&lt;/script&gt; của ô &lt;script type=&quot;math/tex&quot;&gt;i&lt;/script&gt; nơi object tồn tại.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;(3) Đối với các hộp &lt;script type=&quot;math/tex&quot;&gt;j&lt;/script&gt; của ô &lt;script type=&quot;math/tex&quot;&gt;i&lt;/script&gt; nơi object tồn tại, tính tổn thất của xác xuất object tồn tại. Chú ý &lt;script type=&quot;math/tex&quot;&gt;C_i&lt;/script&gt; luôn  = 1.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;(4) Đối với hộp &lt;script type=&quot;math/tex&quot;&gt;j&lt;/script&gt; của ô &lt;script type=&quot;math/tex&quot;&gt;i&lt;/script&gt; và nơi không có object, tính tổn thất của xác xuất này. Chú ý &lt;script type=&quot;math/tex&quot;&gt;C_i&lt;/script&gt; luôn  = 0.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;(5) Tính tổn thất của xác suất có điều kiện cho ô &lt;script type=&quot;math/tex&quot;&gt;i&lt;/script&gt; nơi object tồn tại. Chú ý &lt;script type=&quot;math/tex&quot;&gt;p_i(c)&lt;/script&gt; luôn  = 1 nếu đúng lớp &lt;script type=&quot;math/tex&quot;&gt;c&lt;/script&gt; với ground-truth, ngược lại thì &lt;script type=&quot;math/tex&quot;&gt;p_i(c)&lt;/script&gt; luôn  = 0.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;script type=&quot;math/tex&quot;&gt;\lambda_{coord} = 5.0&lt;/script&gt;  thông số cân bằng để cân bằng tổn thất tọa độ (x, y, w, h) với các tổn thất khác.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;script type=&quot;math/tex&quot;&gt;\lambda_{noobj} = 0.5&lt;/script&gt; thông số cân bằng để cân bằng giữa hộp có và không có object. (Nói chung, đa số các ô trong image không có object, rất ít ô có object)&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;33-huấn-luyện&quot;&gt;3.3. Huấn luyện&lt;/h3&gt;
+
+&lt;p&gt;Đây là kiến thức cơ bản của neural net. Neural net sẽ tính toán từng ảnh (có thể lặp lại 1 ảnh) để tối ưu hàm mất mát. Việc tối ưu này sẽ giúp neural net tìm ra 1 bộ trọng số tốt nhất để biểu diễn dữ liệu của bạn và giúp nhận dạng các ảnh mới.&lt;/p&gt;
+
+&lt;p&gt;Hiểu hàm mất mát giúp bạn hiểu cơ chế hoạt động của từng neural net và cách huấn luyện chúng và giúp bạn dễ dàng hiểu code source, và trải nghiệm với nó.&lt;/p&gt;
+
+&lt;h2 id=&quot;4-yolo-version-2-yolov2&quot;&gt;4. YOLO version 2 (YOLOv2)&lt;/h2&gt;
+
+&lt;h3 id=&quot;41-thay-đổi-quan-trọng--sử-dụng-anchor-boxes&quot;&gt;4.1. Thay đổi quan trọng : sử dụng Anchor boxes&lt;/h3&gt;
+&lt;p&gt;Anchor boxes là các box được định nghĩa trước về hình dạng (width, height).  Kĩ thuật này được giới thiệu trong Faster RCNN (&lt;a href=&quot;https://arxiv.org/abs/1506.01497&quot;&gt;paper&lt;/a&gt;)&lt;br /&gt;
+YOLO dự đoán trực tiếp các thông số của hộp chứa object (hình chữ nhật, bounding box) dựa vào connected layers. YOLOv2 loại bỏ connected layers và các convolutional layers sẽ dự đoán các tham số của hộp chứa object dựa vao anchor boxes rồi tinh chỉnh x,y,width,height cũng như các xác xuất &lt;script type=&quot;math/tex&quot;&gt;\hat{C}_i&lt;/script&gt; và &lt;script type=&quot;math/tex&quot;&gt;\hat{p}_i(c)&lt;/script&gt;)&lt;br /&gt;
+Để có anchor boxes, YOLOv2 sử dụng k-means clustering trên các ground-truth boxes (thông số các objects trong các ảnh dùng để huấn luyện).&lt;/p&gt;
+
+&lt;h3 id=&quot;42-các-thay-đổi-khác-cần-lưu-ý&quot;&gt;4.2. Các thay đổi khác cần lưu ý&lt;/h3&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Sử dụng Batch normalization&lt;/li&gt;
+  &lt;li&gt;grid_size=13x13&lt;/li&gt;
+  &lt;li&gt;box_number=5&lt;/li&gt;
+  &lt;li&gt;image_dimension = 416x416&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Có thể so sánh sự thay đổi dựa vào file config của YOLO vs YOLOv2:&lt;br /&gt;
+&lt;a href=&quot;https://github.com/pjreddie/darknet/blob/master/cfg/yolov1/tiny-yolo.cfg&quot;&gt;cfg YOLO&lt;/a&gt; vs. &lt;a href=&quot;https://github.com/pjreddie/darknet/blob/master/cfg/tiny-yolo.cfg&quot;&gt;cfg YOLOv2&lt;/a&gt;&lt;/p&gt;</content><author><name>Vincent Nguyen</name></author><category term="YOLO" /><summary type="html">Object detection là một bài toán quan trọng trong Computer Vision. Trong post này tôi sẽ giới thiệu YOLOv2, một trong những phương pháp tốt nhất và nhanh nhất (real-time) hiện nay. Tôi viết 2 bài về YOLO, bài thứ nhất (bài này) sẽ giúp các bạn hiểu về nguyên lý hoạt động của YOLO, bài thứ 2 sẽ giới thiệu cách huấn luyện mô hình YOLO cho dữ liệu riêng của chúng ta.</summary><media:thumbnail xmlns:media="http://search.yahoo.com/mrss/" url="http://gastonsanchez.com/assets/images/yolo/blog/mathjax_logo.png" /></entry></feed>

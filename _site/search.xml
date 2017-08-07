@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  
+    <entry>
+      <title><![CDATA[Nhận dạng đối tượng bằng mô hình YOLO]]></title>
+      <url>/object%20detection/machine%20learning/2017/06/10/YOLO-Theory/</url>
+      <content type="html"><![CDATA[<p>Object detection là một bài toán quan trọng trong Computer Vision. Trong post này tôi sẽ giới thiệu YOLOv2, một trong những phương pháp tốt nhất và nhanh nhất (real-time) hiện nay. Tôi viết 2 bài về YOLO, bài thứ nhất (bài này) sẽ giúp các bạn hiểu về nguyên lý hoạt động của YOLO, bài thứ 2 sẽ giới thiệu cách huấn luyện mô hình YOLO cho dữ liệu riêng của chúng ta.</p>
+
+<p>Bài báo gốc về YOLO có thể  tìm ở đây <a href="https://arxiv.org/pdf/1506.02640.pdf">version 1</a>, <a href="https://arxiv.org/pdf/1612.08242.pdf">version 2</a>.</p>
+
+<p>Code source, hướng dẫn chạy test và huấn luyện với dữ liệu ảnh Pascal Voc ở đây <a href="http://pjreddie.com/darknet/yolo/">here</a>.</p>
+
+<p>YOLOv2 trailer. https://www.youtube.com/watch?v=VOC3huqHrss</p>
+
+<p>Bài viết có sử dụng hình ảnh của tác gỉa YOLO và của các bạn Nga (link trong bài).</p>
+
+<h2 id="1-dependencies">1. Dependencies</h2>
+
+<p>Để đọc bài này, cần kiến thức cơ bản về  neural network</p>
+
+<h2 id="2-nhận-dạng">2. Nhận dạng</h2>
+
+<p>YOLO là một deep net kết hợp giữa convolutional layers và connected layers :</p>
+
+<p><img src="/assets/images/yolo/yolo_architecture.jpg" alt="architecture" /></p>
+
+<p>YOLO phân chia hình ảnh thành một mạng lưới 7x7 ô (grid_size=7x7):</p>
+
+<p><img src="/assets/images/yolo/yolo_01.png" alt="grid" /></p>
+
+<p>YOLO sẽ dự đoán xem trong mỗi ô xem liệu có object mà điểm trung tâm rơi vào ô đó. Và dự đoán điểm trung tâm, kích thước của object đó và xác xuất object đó là object nào trong các objects cần xác định.</p>
+
+<p>Mỗi ô này có trách nhiệm dự đoán 2 hộp (boxes_number=2) bao quanh. Mỗi 1 hộp mô tả hình chữ nhật bao quanh một object.</p>
+
+<p>Giả sử ta đang huấn luyên YOLO nhận dạng 20_objects khác nhau. Sau khi qua các layers, image input sẽ được biến đổi thành 1 tensor kích thước 7x7x30.</p>
+
+<p><img src="/assets/images/yolo/yolo_output.jpg" alt="yolo_output" /></p>
+
+<p>Ta có thể hiểu là mỗi ô sẽ có 30 tham số , tham số thứ nhất là xác xuất ô có chứa 1 object, tham số  2,3,4,5 lấn lượt là x_center, y_center, width, height của box 1. Tương tự tham số 6,7,8,9,10 là của box 2. Tham số thứ 11 là xác xuất object trong ô là object1 (trong 20_objects cần nhận dạng). Tương tự tham số 12 là xác xuất object trong ô là object2 … cho đên tham số 30 là xác xuất object trong ô là object20.</p>
+
+<p>Ta có thể hiểu đơn giản như sau:</p>
+<ol>
+  <li>Image input được resize thành 1 image 448x448x3 (image_dimension = 448x448 với số channels = 3, YOLO sử dụng hệ màu HSV)</li>
+  <li>Qua các layers, biến đổi image 448x448x3 thành 1 grid có kích thước 7x7 với số tham số cho mỗi ô trong grid là 30 (30 = 5xboxes_number + number_of_objects)</li>
+  <li>Neural net có nhiệm vụ huấn luyện các <strong>trọng số của các layers</strong> để có được mô hình tốt cuối cùng.</li>
+  <li>Để nhận dạng một image mới, các bước 1,2 sẽ được thực hiện. Sau đó dựa vào các <strong>tham số trong grid 7x7x30</strong> ta sẽ xác định được các box chứa object với xác xuất cao. (các box đè lên nhau sẽ được loại bằng phương pháp NMS, chỉ giữ lại box có xác xuất cao nhất)</li>
+</ol>
+
+<p>Có thể xem video sau của các bạn gấu Nga  để hiểu rõ hơn (chỉ có phần nhận dạng, ko có phần huấn luyện) https://youtu.be/L0tzmv–CGY&amp;usg=ALkJrhgvWHttKiRTLXiQDrI_a3f0tpJ0oA</p>
+
+<h2 id="3-huấn-luyện">3. Huấn luyện</h2>
+
+<p>Để hiểu cách neural net huấn luyện các trọng số  thì điều quan trọng nhất là phải hiểu hàm mất mát (loss function)</p>
+
+<h3 id="31-các-khái-niệm">3.1. Các khái niệm</h3>
+
+<ul>
+  <li>
+    <p><script type="math/tex">1^{obj}_{i\ j} = 1</script> nếu box thứ j của ô thứ i có chứa object. Vì huấn luyện cần các image với ground-truth (vị trí của các objects) nên YOLO biết điểm trung tâm của từng object rơi vào ô nào trong grid 7x7.</p>
+  </li>
+  <li><script type="math/tex">1^{noobj}_{i\ j} = 1</script> nếu box thứ j của ô thứ i không chứa object.</li>
+  <li><script type="math/tex">1^{obj}_{i} = 1</script> nếu ô thứ i có chứa object</li>
+  <li><script type="math/tex">S^2=7\times7</script>, <script type="math/tex">B</script> = boxes_number = số box mỗi ô sẽ dự đoán, được cố định = 2</li>
+  <li><script type="math/tex">\lambda_{coord} = 5.0</script>, <script type="math/tex">\lambda_{noobj} = 0.5</script></li>
+  <li><script type="math/tex">classes</script> : các lớp đối tượng cần được nhận dạng, ví dụ chó, mèo, oto…</li>
+</ul>
+
+<p><img src="/assets/images/yolo/yolo_lossFunction.JPG" alt="loss function" /></p>
+
+<h3 id="32-hàm-mất-mát">3.2. Hàm mất mát</h3>
+
+<ul>
+  <li>
+    <p>(1) Tính toán loss (tổn thất) của điểm trung tâm (x, y) cho hộp <script type="math/tex">j</script> của ô <script type="math/tex">i</script> nơi object tồn tại. Chú ý là  <script type="math/tex">\hat{x}_i</script> là tham số của tensor output của neural net còn <script type="math/tex">x_i</script> là của ground-truth. Tương tự cho tất cả các biến khác.</p>
+  </li>
+  <li>
+    <p>(2) Tính toán tổn thất width và height của hộp <script type="math/tex">j</script> của ô <script type="math/tex">i</script> nơi object tồn tại.</p>
+  </li>
+  <li>
+    <p>(3) Đối với các hộp <script type="math/tex">j</script> của ô <script type="math/tex">i</script> nơi object tồn tại, tính tổn thất của xác xuất object tồn tại. Chú ý <script type="math/tex">C_i</script> luôn  = 1.</p>
+  </li>
+  <li>
+    <p>(4) Đối với hộp <script type="math/tex">j</script> của ô <script type="math/tex">i</script> và nơi không có object, tính tổn thất của xác xuất này. Chú ý <script type="math/tex">C_i</script> luôn  = 0.</p>
+  </li>
+  <li>
+    <p>(5) Tính tổn thất của xác suất có điều kiện cho ô <script type="math/tex">i</script> nơi object tồn tại. Chú ý <script type="math/tex">p_i(c)</script> luôn  = 1 nếu đúng lớp <script type="math/tex">c</script> với ground-truth, ngược lại thì <script type="math/tex">p_i(c)</script> luôn  = 0.</p>
+  </li>
+  <li>
+    <p><script type="math/tex">\lambda_{coord} = 5.0</script>  thông số cân bằng để cân bằng tổn thất tọa độ (x, y, w, h) với các tổn thất khác.</p>
+  </li>
+  <li>
+    <p><script type="math/tex">\lambda_{noobj} = 0.5</script> thông số cân bằng để cân bằng giữa hộp có và không có object. (Nói chung, đa số các ô trong image không có object, rất ít ô có object)</p>
+  </li>
+</ul>
+
+<h3 id="33-huấn-luyện">3.3. Huấn luyện</h3>
+
+<p>Đây là kiến thức cơ bản của neural net. Neural net sẽ tính toán từng ảnh (có thể lặp lại 1 ảnh) để tối ưu hàm mất mát. Việc tối ưu này sẽ giúp neural net tìm ra 1 bộ trọng số tốt nhất để biểu diễn dữ liệu của bạn và giúp nhận dạng các ảnh mới.</p>
+
+<p>Hiểu hàm mất mát giúp bạn hiểu cơ chế hoạt động của từng neural net và cách huấn luyện chúng và giúp bạn dễ dàng hiểu code source, và trải nghiệm với nó.</p>
+
+<h2 id="4-yolo-version-2-yolov2">4. YOLO version 2 (YOLOv2)</h2>
+
+<h3 id="41-thay-đổi-quan-trọng--sử-dụng-anchor-boxes">4.1. Thay đổi quan trọng : sử dụng Anchor boxes</h3>
+<p>Anchor boxes là các box được định nghĩa trước về hình dạng (width, height).  Kĩ thuật này được giới thiệu trong Faster RCNN (<a href="https://arxiv.org/abs/1506.01497">paper</a>)<br />
+YOLO dự đoán trực tiếp các thông số của hộp chứa object (hình chữ nhật, bounding box) dựa vào connected layers. YOLOv2 loại bỏ connected layers và các convolutional layers sẽ dự đoán các tham số của hộp chứa object dựa vao anchor boxes rồi tinh chỉnh x,y,width,height cũng như các xác xuất <script type="math/tex">\hat{C}_i</script> và <script type="math/tex">\hat{p}_i(c)</script>)<br />
+Để có anchor boxes, YOLOv2 sử dụng k-means clustering trên các ground-truth boxes (thông số các objects trong các ảnh dùng để huấn luyện).</p>
+
+<h3 id="42-các-thay-đổi-khác-cần-lưu-ý">4.2. Các thay đổi khác cần lưu ý</h3>
+
+<ul>
+  <li>Sử dụng Batch normalization</li>
+  <li>grid_size=13x13</li>
+  <li>box_number=5</li>
+  <li>image_dimension = 416x416</li>
+</ul>
+
+<p>Có thể so sánh sự thay đổi dựa vào file config của YOLO vs YOLOv2:<br />
+<a href="https://github.com/pjreddie/darknet/blob/master/cfg/yolov1/tiny-yolo.cfg">cfg YOLO</a> vs. <a href="https://github.com/pjreddie/darknet/blob/master/cfg/tiny-yolo.cfg">cfg YOLOv2</a></p>
+]]></content>
+      <categories>
+        
+          <category> object detection </category>
+        
+          <category> machine learning </category>
+        
+      </categories>
+      <tags>
+        
+          <tag> YOLO </tag>
+        
+      </tags>
+      <tags></tags>
+    </entry>
+  
+</search>
